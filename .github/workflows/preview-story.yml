@@ -1,0 +1,67 @@
+name: preview-instagram-story
+
+# 手動プレビュー専用。Instagramへの投稿・公開ブランチへの保存は行わない。
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '確認する日付 YYYY-MM-DD（空欄は今日。定休日は画像なし）'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validate date
+        env:
+          PREVIEW_DATE: ${{ inputs.date }}
+        run: |
+          node --input-type=module <<'JS'
+          const value = process.env.PREVIEW_DATE;
+          if (value) {
+            const date = new Date(value + 'T00:00:00Z');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+              console.error('日付は実在する YYYY-MM-DD で入力してください');
+              process.exit(1);
+            }
+          }
+          JS
+      - name: Install renderer
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Render preview only
+        env:
+          PREVIEW_DATE: ${{ inputs.date }}
+        run: |
+          if [ -n "$PREVIEW_DATE" ]; then
+            node src/render.mjs "$PREVIEW_DATE"
+          else
+            node src/render.mjs
+          fi
+      - name: Explain result
+        run: |
+          echo '## ストーリー画像のプレビュー' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Instagramへの投稿、publishedブランチへの保存は行っていません。' >> "$GITHUB_STEP_SUMMARY"
+          if compgen -G 'out/story*.png' > /dev/null; then
+            echo '下の Artifacts から story-preview をダウンロードしてPNGを確認してください。保存期間は7日です。' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '定休日のため画像はありません。営業日を指定して再実行してください。' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: story-preview
+          path: out/story*.png
+          if-no-files-found: ignore
+          retention-days: 7
