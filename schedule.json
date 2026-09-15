@@ -2,30 +2,47 @@
   "shopName": "COZY COFFEE SPOT",
   "location": "Tezukayama, Osaka",
   "hoursSuffix": "L.O.",
-
   "//sheet": "臨時休業/時間変更をスマホから足すためのGoogleスプレッドシート公開CSV URL。空なら下のoverridesだけを使う。",
   "overridesSheetCsvUrl": "",
-
   "//postClosedDays": "false = 定休日は投稿しない・臨時休業(シート/overrides)はCLOSEDで投稿する。true = 定休日も含め毎日投稿。",
   "postClosedDays": false,
-
   "//theme": "見た目の設定。コードを触らずここで色を変えられる。accent=差し色(OPEN時間・CLOSED文字・区切り)、background=写真が無いときの下地。",
   "theme": {
     "accent": "#0abab5",
     "background": "#111111"
   },
-
   "//": "regular = 毎週の固定営業時間。null = 定休日。時間は24時間表記。お店に合わせて書き換える。",
   "regular": {
-    "mon": { "open": "9:00", "close": "16:00" },
+    "mon": {
+      "open": "9:00",
+      "close": "16:00"
+    },
     "tue": null,
-    "wed": { "open": "9:00", "close": "16:00" },
-    "thu": { "open": "9:00", "close": "16:00" },
-    "fri": { "open": "9:00", "close": "16:00" },
-    "sat": { "open": "9:00", "close": "16:00" },
-    "sun": { "open": "9:00", "close": "16:00" }
+    "wed": {
+      "open": "9:00",
+      "close": "16:00"
+    },
+    "thu": {
+      "open": "9:00",
+      "close": "16:00"
+    },
+    "fri": {
+      "open": "9:00",
+      "close": "16:00"
+    },
+    "sat": {
+      "open": "9:00",
+      "close": "16:00"
+    },
+    "sun": {
+      "open": "9:00",
+      "close": "16:00"
+    }
   },
-
   "//overrides": "スプレッドシートを使わない場合の予備。臨時休業/時間変更を日付キーで。基本はスプレッドシートで管理。",
-  "overrides": {}
+  "overrides": {
+    "2026-09-24": {
+      "closed": true
+    }
+  }
 }
