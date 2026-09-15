@@ -2,17 +2,54 @@ name: スマホ用フォント設定
 on:
   workflow_dispatch:
     inputs:
-      font:
-        description: '書体を選択（保存後、次回生成から反映）'
+      open_font:
+        description: 'OPENの書体'
         type: choice
         default: '変更しない'
         options:
           - '変更しない'
-          - 'OPEN Faster One・日付と営業時間 Chewy'
-          - '現在の標準（Oswald）'
-          - 'モダン（Montserrat）'
-          - 'すっきり（Noto Sans JP）'
-          - 'クラシック（Noto Serif JP）'
+          - 'Faster One'
+          - 'Chewy'
+          - 'Oswald'
+          - 'Montserrat'
+          - 'Noto Sans JP'
+          - 'Noto Serif JP'
+      date_font:
+        description: '日付の書体'
+        type: choice
+        default: '変更しない'
+        options:
+          - '変更しない'
+          - 'Faster One'
+          - 'Chewy'
+          - 'Oswald'
+          - 'Montserrat'
+          - 'Noto Sans JP'
+          - 'Noto Serif JP'
+      weekday_font:
+        description: '曜日の書体'
+        type: choice
+        default: '変更しない'
+        options:
+          - '変更しない'
+          - 'Faster One'
+          - 'Chewy'
+          - 'Oswald'
+          - 'Montserrat'
+          - 'Noto Sans JP'
+          - 'Noto Serif JP'
+      hours_font:
+        description: '営業時間・L.O.の書体'
+        type: choice
+        default: '変更しない'
+        options:
+          - '変更しない'
+          - 'Faster One'
+          - 'Chewy'
+          - 'Oswald'
+          - 'Montserrat'
+          - 'Noto Sans JP'
+          - 'Noto Serif JP'
 permissions:
   contents: write
 concurrency:
@@ -32,48 +69,49 @@ jobs:
           node-version: '20'
       - name: Validate and update font
         env:
-          FONT_CHOICE: ${{ inputs.font }}
+          FONT_OPEN: ${{ inputs.open_font }}
+          FONT_DATE: ${{ inputs.date_font }}
+          FONT_WEEKDAY: ${{ inputs.weekday_font }}
+          FONT_HOURS: ${{ inputs.hours_font }}
         run: |
           node --input-type=module <<'JS'
           import { readFile, writeFile } from 'node:fs/promises';
-          const CUSTOM_CSS = "\n      /* cozy-custom-fonts:start */\n      body.is-open .status {\n        font-family: \"Faster One\", var(--display);\n        font-weight: 400;\n      }\n      .today,\n      .hours,\n      .hours-suffix {\n        font-family: \"Chewy\", var(--body);\n        font-weight: 400;\n      }\n      /* cozy-custom-fonts:end */\n";
-          function applyCustomFonts(html) {
-            html = html.replace(/\n      \/\* cozy-custom-fonts:start \*\/[\s\S]*?\/\* cozy-custom-fonts:end \*\/\n/g, '');
-            const pattern = /href="https:\/\/fonts\.googleapis\.com\/css2\?([^"]*)"/g;
-            if ((html.match(pattern) || []).length !== 1) throw new Error('フォント読込を特定できません');
-            html = html.replace(pattern, (_, query) => {
-              const params = query.split('&').filter(p => !/^family=(Faster\+One|Chewy)(:|$)/.test(p));
-              params.push('family=Faster+One', 'family=Chewy');
+          function setFonts(html, selections) {
+            const fonts = {
+              'Faster One': ['Faster+One', '"Faster One", var(--body)'],
+              'Chewy': ['Chewy', '"Chewy", var(--body)'],
+              'Oswald': ['Oswald:wght@400;500', '"Oswald", var(--body)'],
+              'Montserrat': ['Montserrat:wght@400;500', '"Montserrat", var(--body)'],
+              'Noto Sans JP': ['Noto+Sans+JP:wght@400;500', '"Noto Sans JP", sans-serif'],
+              'Noto Serif JP': ['Noto+Serif+JP:wght@400;500', '"Noto Serif JP", serif']
+            };
+            const added = new Map();
+            for (const key of ['open', 'date', 'weekday', 'hours']) {
+              const choice = selections[key] || '変更しない';
+              if (choice === '変更しない') continue;
+              if (!Object.hasOwn(fonts, choice)) throw new Error('フォントの選択値が不正です');
+              const pattern = new RegExp('--font-' + key + ':\\s*[^;]+;', 'g');
+              if ((html.match(pattern) || []).length !== 1) throw new Error('個別フォント設定を特定できません。保存を中止しました');
+              const [query, stack] = fonts[choice];
+              html = html.replace(pattern, '--font-' + key + ': ' + stack + ';');
+              added.set(query.split(':')[0], query);
+            }
+            if (!added.size) return html;
+            const link = /href="https:\/\/fonts\.googleapis\.com\/css2\?([^"]*)"/g;
+            if ((html.match(link) || []).length !== 1) throw new Error('フォント読込を特定できません');
+            return html.replace(link, (_, query) => {
+              const params = query.split('&').filter(p => !p.startsWith('family=') || !added.has(p.slice(7).split(':')[0]));
+              for (const value of added.values()) params.push('family=' + value);
               return 'href="https://fonts.googleapis.com/css2?' + params.join('&') + '"';
             });
-            if (!html.includes('    </style>')) throw new Error('スタイルがありません');
-            return html.replace('    </style>', CUSTOM_CSS + '    </style>');
-          }
-          function setFont(html, choice) {
-            if (choice === 'OPEN Faster One・日付と営業時間 Chewy') return applyCustomFonts(html);
-            const presets = {
-              '現在の標準（Oswald）': ['Oswald:wght@500&family=Noto+Sans+JP:wght@400;500', '"Oswald", "Noto Sans JP", sans-serif', '"Noto Sans JP", sans-serif'],
-              'モダン（Montserrat）': ['Montserrat:wght@400;500&family=Noto+Sans+JP:wght@400;500', '"Montserrat", "Noto Sans JP", sans-serif', '"Noto Sans JP", sans-serif'],
-              'すっきり（Noto Sans JP）': ['Noto+Sans+JP:wght@400;500', '"Noto Sans JP", sans-serif', '"Noto Sans JP", sans-serif'],
-              'クラシック（Noto Serif JP）': ['Noto+Serif+JP:wght@400;500', '"Noto Serif JP", serif', '"Noto Serif JP", serif']
-            };
-            if (choice === '変更しない') return html;
-            if (!Object.hasOwn(presets, choice)) throw new Error('フォントを選択してください');
-            html = html.replace(/\n      \/\* cozy-custom-fonts:start \*\/[\s\S]*?\/\* cozy-custom-fonts:end \*\/\n/g, '');
-            const [query, display, body] = presets[choice];
-            const rules = [
-              [/href="https:\/\/fonts\.googleapis\.com\/css2\?[^"]*"/g, 'href="https://fonts.googleapis.com/css2?family=' + query + '&display=swap"'],
-              [/--display:\s*[^;]+;/g, '--display: ' + display + ';'],
-              [/--body:\s*[^;]+;/g, '--body: ' + body + ';']
-            ];
-            for (const [pattern, replacement] of rules) {
-              if ((html.match(pattern) || []).length !== 1) throw new Error('フォント設定の形式が変わっています。保存を中止しました');
-              html = html.replace(pattern, replacement);
-            }
-            return html;
           }
           const original = await readFile('src/template.html', 'utf8');
-          const updated = setFont(original, process.env.FONT_CHOICE);
+          const updated = setFonts(original, {
+            open: process.env.FONT_OPEN,
+            date: process.env.FONT_DATE,
+            weekday: process.env.FONT_WEEKDAY,
+            hours: process.env.FONT_HOURS,
+          });
           if (updated !== original) await writeFile('src/template.html', updated);
           JS
       - name: Save font
@@ -89,5 +127,5 @@ jobs:
             echo 'フォントを保存しました。次回の画像生成から反映されます。' >> "$GITHUB_STEP_SUMMARY"
           fi
           echo 'Instagramへの即時投稿や投稿済み画像の変更はしていません。' >> "$GITHUB_STEP_SUMMARY"
-          echo '元の書体に戻すには「現在の標準（Oswald）」を選んで実行してください。' >> "$GITHUB_STEP_SUMMARY"
+          echo 'OPEN・日付・曜日・営業時間は個別に変更できます。選択しない項目は今の書体を維持します。' >> "$GITHUB_STEP_SUMMARY"
           echo '[文字の見え方をプレビューで確認する](https://github.com/56p6545md4-creator/ig-story-auto-cozy/actions/workflows/preview-story.yml)' >> "$GITHUB_STEP_SUMMARY"
