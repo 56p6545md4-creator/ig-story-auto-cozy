@@ -1,0 +1,80 @@
+name: スマホ用臨時休業設定
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '登録または解除（保存のみ。即投稿はしません）'
+        type: choice
+        default: '臨時休業を登録'
+        options:
+          - '臨時休業を登録'
+          - '臨時休業を解除'
+      date:
+        description: '対象日・日本時間（例 2026-09-24）。1日ずつ設定'
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: cozy-mobile-design-settings
+  cancel-in-progress: false
+jobs:
+  save-closure:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validate and update closure
+        env:
+          CLOSURE_ACTION: ${{ inputs.action }}
+          CLOSURE_DATE: ${{ inputs.date }}
+        run: |
+          node --input-type=module <<'JS'
+          import { readFile, writeFile, appendFile } from 'node:fs/promises';
+          function changeClosure(schedule, action, date) {
+            if (!['臨時休業を登録', '臨時休業を解除'].includes(action)) throw new Error('操作を選択してください');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('日付は 2026-09-24 の形式で入力してください');
+            const parsed = new Date(date + 'T12:00:00Z');
+            if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) throw new Error('実在する日付を入力してください');
+            if (schedule.overridesSheetCsvUrl) throw new Error('スプレッドシート連携中です。臨時休業はシート側で設定してください');
+            const overrides = schedule.overrides || {};
+            const exists = Object.hasOwn(overrides, date);
+            const previous = overrides[date];
+            if (exists && previous !== null && previous?.closed !== true) throw new Error('この日には営業時間変更などの設定があります。上書きせず中止しました');
+            if (action === '臨時休業を登録') {
+              overrides[date] = { ...(previous || {}), closed: true };
+            } else {
+              delete overrides[date];
+            }
+            schedule.overrides = overrides;
+            return schedule;
+          }
+          const original = await readFile('schedule.json', 'utf8');
+          const schedule = JSON.parse(original);
+          const before = JSON.stringify(schedule);
+          const date = process.env.CLOSURE_DATE.trim();
+          changeClosure(schedule, process.env.CLOSURE_ACTION, date);
+          if (before !== JSON.stringify(schedule)) await writeFile('schedule.json', JSON.stringify(schedule, null, 2) + '\n');
+          await appendFile(process.env.GITHUB_STEP_SUMMARY, '対象日: ' + date + '\n\n操作: ' + process.env.CLOSURE_ACTION + '\n\n');
+          JS
+      - name: Save settings
+        run: |
+          git add -- schedule.json
+          if git diff --cached --quiet; then
+            echo '保存内容に変更はありません。' >> "$GITHUB_STEP_SUMMARY"
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m "Update temporary closure from mobile settings"
+            git push origin HEAD:main
+            echo '設定を保存しました。次回の画像生成から反映されます。' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '臨時休業の営業日は当日の自動投稿がCLOSEDになります。火曜の定休日は投稿しません。解除すると曜日ごとの通常営業に戻ります。' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Instagramへの即時投稿や、投稿済みストーリーの変更は行っていません。朝の投稿前までに保存してください。' >> "$GITHUB_STEP_SUMMARY"
+          echo '[対象日を入力してプレビューする](https://github.com/56p6545md4-creator/ig-story-auto-cozy/actions/workflows/preview-story.yml)' >> "$GITHUB_STEP_SUMMARY"
