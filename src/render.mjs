@@ -10,13 +10,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { getStatus } from './status.mjs';
+import { VIDEO_EXT, composeVideo } from './video.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 const IMG_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
 const HEIC_EXT = ['.heic', '.heif'];               // iPhone写真。内部でJPEGに変換して使う
-const ALL_EXT = [...IMG_EXT, ...HEIC_EXT];
+// Video publication is enabled separately after approval; preview opts in.
+const ALL_EXT = [...IMG_EXT, ...HEIC_EXT, ...(process.env.ENABLE_VIDEO === '1' ? VIDEO_EXT : [])];
 
 // backgrounds/ から日替わりで1枚選ぶ。
 // 経過日数ベースの巡回：連続する日は必ず次の1枚へ進み、全部使い切ってから最初に戻る（抜け・重複なし）。同じ日は同じ画像。
@@ -30,7 +32,7 @@ async function pickBackground(dateStr) {
   if (files.length === 0) {
     const others = all.filter((f) => !f.startsWith('.') && !f.endsWith('.txt'));
     if (others.length) {
-      console.warn(`[bg] 対応外の形式のみ: ${others.join(', ')}  → .jpg / .png / .webp / .heic に対応`);
+      console.warn(`[bg] 対応外の形式のみ: ${others.join(', ')}  → .jpg / .png / .webp / .heic / .mp4 / .mov に対応`);
     }
     return null;
   }
@@ -134,6 +136,10 @@ async function main() {
   const outDir = path.join(ROOT, 'out');
   await mkdir(outDir, { recursive: true });
 
+  // Remove stale media so a failed/closed-day render cannot publish an older story.
+  const outputBase = arg ? `story-${s.date}` : 'story';
+  for (const ext of ['png', 'mp4', 'preview.png']) await rm(path.join(outDir, `${outputBase}.${ext}`), { force: true });
+
   // 定休日は投稿しない（postClosedDays=false）。ただし臨時休業は告知したいので投稿する。
   if (!s.isOpen && !s.temporaryClosure && schedule.postClosedDays === false) {
     const skipPath = path.join(outDir, arg ? `story-${s.date}.png` : 'story.png');
@@ -144,11 +150,14 @@ async function main() {
 
   // 背景画像を用意して file:// URL にする
   const bgSrc = await pickBackground(s.date);
+  const isVideo = !!bgSrc && VIDEO_EXT.includes(path.extname(bgSrc).toLowerCase());
   let bodyStyle = '';
-  if (bgSrc) {
+  if (bgSrc && !isVideo) {
     const bgFile = await prepareBackground(bgSrc, outDir);
     bodyStyle = `--bg-url: url('${pathToFileURL(bgFile).href}');`;
     console.log(`[bg] using ${path.basename(bgSrc)}`);
+  } else if (isVideo) {
+    console.log(`[bg] video: ${path.basename(bgSrc)}`);
   } else {
     console.log('[bg] 背景画像なし（黒背景）');
   }
@@ -182,11 +191,11 @@ async function main() {
   // 備考が無い日は空のnote要素を消す（余白が出ないように）
   if (!s.note) html = html.replace(/<div class="note[^"]*">\s*<\/div>/g, '');
 
-  const outName = arg ? `story-${s.date}.png` : 'story.png';
+  const outName = `${outputBase}.${isVideo ? 'mp4' : 'png'}`;
   const outPath = path.join(outDir, outName);
 
   // 差し込み後のHTMLを書き出し、そのファイルをブラウザで開く（file://origin なので画像が読める）
-  const htmlPath = outPath.replace(/\.png$/, '.html');
+  const htmlPath = outPath.replace(/\.(png|mp4)$/, '.html');
   await writeFile(htmlPath, html, 'utf8');
   if (process.env.EMIT_ONLY === '1') { console.log(`[emit] ${htmlPath}`); return htmlPath; }
 
@@ -204,8 +213,30 @@ async function main() {
   });
   await page.waitForTimeout(150);
 
-  await page.screenshot({ path: outPath, clip: { x: 0, y: 0, width: 1080, height: 1920 } });
-  await browser.close();
+  if (isVideo) {
+    // Keep only the existing text and scrim, including their alpha channel.
+    await page.addStyleTag({ content: 'html, body { background: transparent !important; } .bg { display: none !important; }' });
+    const overlay = path.join(outDir, '_overlay.png');
+    try {
+      await page.screenshot({ path: overlay, omitBackground: true, clip: { x: 0, y: 0, width: 1080, height: 1920 } });
+    } finally {
+      await browser.close();
+    }
+    try {
+      await composeVideo(bgSrc, overlay, outPath);
+    } catch (error) {
+      await rm(outPath, { force: true });
+      throw error;
+    } finally {
+      await rm(overlay, { force: true });
+    }
+  } else {
+    try {
+      await page.screenshot({ path: outPath, clip: { x: 0, y: 0, width: 1080, height: 1920 } });
+    } finally {
+      await browser.close();
+    }
+  }
 
   console.log(`[render] ${s.isOpen ? 'OPEN' : 'CLOSED'}  ${s.date}(${s.weekdayJa}) -> ${outPath}`);
   if (!s.isOpen && s.nextOpen) {
