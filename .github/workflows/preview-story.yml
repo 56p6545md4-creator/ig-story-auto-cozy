@@ -39,6 +39,8 @@ jobs:
           JS
       - name: Install renderer
         run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           npm ci
           npx playwright install --with-deps chromium
       - name: Render preview only
@@ -52,16 +54,18 @@ jobs:
           fi
       - name: Explain result
         run: |
-          echo '## ストーリー画像のプレビュー' >> "$GITHUB_STEP_SUMMARY"
+          echo '## ストーリーのプレビュー' >> "$GITHUB_STEP_SUMMARY"
           echo 'Instagramへの投稿、publishedブランチへの保存は行っていません。' >> "$GITHUB_STEP_SUMMARY"
           if compgen -G 'out/story*.png' > /dev/null; then
-            echo '下の Artifacts から story-preview をダウンロードしてPNGを確認してください。保存期間は7日です。' >> "$GITHUB_STEP_SUMMARY"
+            echo '下の Artifacts から story-preview をダウンロードしてPNGまたはMP4を確認してください。保存期間は7日です。' >> "$GITHUB_STEP_SUMMARY"
           else
             echo '定休日のため画像はありません。営業日を指定して再実行してください。' >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/upload-artifact@v4
         with:
           name: story-preview
-          path: out/story*.png
+          path: |
+            out/story*.png
+            out/story*.mp4
           if-no-files-found: ignore
           retention-days: 7
