@@ -155,14 +155,27 @@
       }
 
       /* cozy-custom-fonts:start */
+      :root {
+        --font-open: "Faster One", var(--display);
+        --font-date: "Chewy", var(--body);
+        --font-weekday: "Chewy", var(--body);
+        --font-hours: "Chewy", var(--body);
+      }
       body.is-open .status {
-        font-family: "Faster One", var(--display);
+        font-family: var(--font-open);
         font-weight: 400;
       }
-      .today,
+      .today-date {
+        font-family: var(--font-date);
+        font-weight: 400;
+      }
+      .today-weekday {
+        font-family: var(--font-weekday);
+        font-weight: 400;
+      }
       .hours,
       .hours-suffix {
-        font-family: "Chewy", var(--body);
+        font-family: var(--font-hours);
         font-weight: 400;
       }
       /* cozy-custom-fonts:end */
@@ -175,7 +188,7 @@
     <div class="scrim"></div>
 
     <div class="frame">
-      <div class="today">{{DATE_LABEL}} {{WEEKDAY}}</div>
+      <div class="today"><span class="today-date">{{DATE_LABEL}}</span> <span class="today-weekday">{{WEEKDAY}}</span></div>
 
       <div class="only-open">
         <div class="status">OPEN</div>
