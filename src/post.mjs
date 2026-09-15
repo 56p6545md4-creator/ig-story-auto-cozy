@@ -1,83 +1,52 @@
-// post.mjs
-// レンダリング済みPNG（公開URL）を Instagram ストーリーズに投稿する。
-// Instagramログイン方式（graph.instagram.com）の2ステップ: (1) メディアコンテナ作成 → (2) 公開。
-//
-// 必要な環境変数:
-//   IG_USER_ID        Instagram の user_id（数字）
-//   IG_ACCESS_TOKEN   長期アクセストークン（instagram_business_content_publish 権限つき）
-//   IMAGE_URL         レンダリングしたPNGの「公開URL」（httpsで誰でも取得できること）
-//
-// 使い方: IMAGE_URL=... node src/post.mjs
+// Publish a rendered image or video Story. No automatic republish after an
+// ambiguous network error: creating another container could duplicate a post.
+import { pathToFileURL } from 'node:url';
 
-const GRAPH_VERSION = process.env.IG_GRAPH_VERSION || 'v25.0';
-const GRAPH = `https://graph.instagram.com/${GRAPH_VERSION}`;
-
-const IG_USER_ID = process.env.IG_USER_ID;
-const TOKEN = process.env.IG_ACCESS_TOKEN;
-const IMAGE_URL = process.env.IMAGE_URL;
-
-function need(name, v) { if (!v) { console.error(`Missing env: ${name}`); process.exit(1); } }
-need('IG_USER_ID', IG_USER_ID);
-need('IG_ACCESS_TOKEN', TOKEN);
-need('IMAGE_URL', IMAGE_URL);
-
-async function api(path, params) {
-  const url = new URL(`${GRAPH}/${path}`);
-  const body = new URLSearchParams({ ...params, access_token: TOKEN });
-  const res = await fetch(url, { method: 'POST', body });
-  const json = await res.json();
-  if (!res.ok || json.error) {
-    throw new Error(`Graph API error: ${JSON.stringify(json.error || json)}`);
+export async function postStory({
+  userId, token, imageUrl, videoUrl, version = 'v25.0',
+  fetchImpl = fetch, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  attempts = 60
+}) {
+  if (!userId || !token) throw new Error('Missing IG_USER_ID or IG_ACCESS_TOKEN');
+  if ((!imageUrl && !videoUrl) || (imageUrl && videoUrl)) throw new Error('Provide exactly one IMAGE_URL or VIDEO_URL');
+  if (new URL(videoUrl || imageUrl).protocol !== 'https:') throw new Error('Media URL must use HTTPS');
+  const graph = 'https://graph.instagram.com/' + version;
+  async function request(path, params, method = 'POST') {
+    const url = new URL(graph + '/' + path);
+    const init = { method, headers: { Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(30000) };
+    if (method === 'POST') init.body = new URLSearchParams(params);
+    else for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    const response = await fetchImpl(url, init);
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error('Instagram API request failed (HTTP ' + response.status + ', code ' + (data.error?.code ?? 'unknown') + ')');
+    return data;
   }
-  return json;
-}
-
-async function getStatus(creationId) {
-  const url = new URL(`${GRAPH}/${creationId}`);
-  url.searchParams.set('fields', 'status_code,status');
-  url.searchParams.set('access_token', TOKEN);
-  const res = await fetch(url);
-  return res.json();
-}
-
-async function postOnce() {
-  // 1) ストーリー用コンテナを作成
-  const container = await api(`${IG_USER_ID}/media`, {
+  const container = await request(userId + '/media', {
     media_type: 'STORIES',
-    image_url: IMAGE_URL,
+    ...(videoUrl ? { video_url: videoUrl } : { image_url: imageUrl })
   });
-  const creationId = container.id;
-  console.log(`[post] container created: ${creationId}`);
-
-  // 2) 準備完了まで待つ（画像は通常すぐFINISHED）
-  for (let i = 0; i < 12; i++) {
-    const st = await getStatus(creationId);
-    if (st.status_code === 'FINISHED') break;
-    if (st.status_code === 'ERROR') throw new Error(`container error: ${JSON.stringify(st)}`);
-    await new Promise((r) => setTimeout(r, 3000));
+  if (!container.id) throw new Error('Instagram did not return a container ID');
+  let ready = false;
+  for (let i = 0; i < attempts; i++) {
+    const state = await request(container.id, { fields: 'status_code' }, 'GET');
+    if (state.status_code === 'FINISHED') { ready = true; break; }
+    if (['ERROR', 'EXPIRED'].includes(state.status_code)) throw new Error('Instagram container status: ' + state.status_code);
+    if (state.status_code === 'PUBLISHED') return { alreadyPublished: true };
+    if (i < attempts - 1) await sleep(5000);
   }
-
-  // 3) 公開
-  const published = await api(`${IG_USER_ID}/media_publish`, { creation_id: creationId });
-  console.log(`[post] published story id: ${published.id}`);
+  if (!ready) throw new Error('Instagram processing timed out; no publish request was sent');
+  const result = await request(userId + '/media_publish', { creation_id: container.id });
+  if (!result.id) throw new Error('Instagram did not confirm publication; check Instagram before retrying');
+  return result;
 }
 
-// 一時的なブロック/レート制限に備えて数回だけ再試行。成功したら即終了（＝二重投稿しない）。
-async function main() {
-  const MAX = 3;
-  const WAITS = [30000, 60000]; // 1回目失敗→30秒、2回目失敗→60秒
-  for (let attempt = 1; attempt <= MAX; attempt++) {
-    try {
-      await postOnce();
-      return; // 成功 → ここで終わり。以降のリトライはしない
-    } catch (e) {
-      console.error(`[post] 試行 ${attempt}/${MAX} 失敗: ${e.message}`);
-      if (attempt >= MAX) throw e; // 最後まで失敗ならエラー終了（失敗通知が飛ぶ）
-      const wait = WAITS[attempt - 1] ?? 60000;
-      console.log(`[post] ${wait / 1000}秒待って再試行します…`);
-      await new Promise((r) => setTimeout(r, wait));
-    }
-  }
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  postStory({
+    userId: process.env.IG_USER_ID,
+    token: process.env.IG_ACCESS_TOKEN,
+    imageUrl: process.env.IMAGE_URL,
+    videoUrl: process.env.VIDEO_URL,
+    version: process.env.IG_GRAPH_VERSION || 'v25.0'
+  }).then(result => console.log('[post] published:', result.id || 'already published'))
+    .catch(error => { console.error('[post]', error.message); process.exitCode = 1; });
 }
-
-main().catch((e) => { console.error(e); process.exit(1); });
