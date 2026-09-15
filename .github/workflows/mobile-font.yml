@@ -8,7 +8,7 @@ on:
         default: '変更しない'
         options:
           - '変更しない'
-          - 'OPEN Faster One・営業時間 Chewy'
+          - 'OPEN Faster One・日付と営業時間 Chewy'
           - '現在の標準（Oswald）'
           - 'モダン（Montserrat）'
           - 'すっきり（Noto Sans JP）'
@@ -36,7 +36,7 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           import { readFile, writeFile } from 'node:fs/promises';
-          const CUSTOM_CSS = "\n      /* cozy-custom-fonts:start */\n      body.is-open .status {\n        font-family: \"Faster One\", var(--display);\n        font-weight: 400;\n      }\n      .hours,\n      .hours-suffix {\n        font-family: \"Chewy\", var(--body);\n        font-weight: 400;\n      }\n      /* cozy-custom-fonts:end */\n";
+          const CUSTOM_CSS = "\n      /* cozy-custom-fonts:start */\n      body.is-open .status {\n        font-family: \"Faster One\", var(--display);\n        font-weight: 400;\n      }\n      .today,\n      .hours,\n      .hours-suffix {\n        font-family: \"Chewy\", var(--body);\n        font-weight: 400;\n      }\n      /* cozy-custom-fonts:end */\n";
           function applyCustomFonts(html) {
             html = html.replace(/\n      \/\* cozy-custom-fonts:start \*\/[\s\S]*?\/\* cozy-custom-fonts:end \*\/\n/g, '');
             const pattern = /href="https:\/\/fonts\.googleapis\.com\/css2\?([^"]*)"/g;
@@ -50,7 +50,7 @@ jobs:
             return html.replace('    </style>', CUSTOM_CSS + '    </style>');
           }
           function setFont(html, choice) {
-            if (choice === 'OPEN Faster One・営業時間 Chewy') return applyCustomFonts(html);
+            if (choice === 'OPEN Faster One・日付と営業時間 Chewy') return applyCustomFonts(html);
             const presets = {
               '現在の標準（Oswald）': ['Oswald:wght@500&family=Noto+Sans+JP:wght@400;500', '"Oswald", "Noto Sans JP", sans-serif', '"Noto Sans JP", sans-serif'],
               'モダン（Montserrat）': ['Montserrat:wght@400;500&family=Noto+Sans+JP:wght@400;500', '"Montserrat", "Noto Sans JP", sans-serif', '"Noto Sans JP", sans-serif'],
