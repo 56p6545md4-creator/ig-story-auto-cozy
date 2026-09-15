@@ -17,6 +17,6 @@ export async function composeVideo(source, overlay, output) {
     '-movflags', '+faststart', '-threads', '2', '-filter_complex_threads', '1', output
   ], { timeout: 180000, maxBuffer: 1024 * 1024 });
   await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
-    '-i', output, '-frames:v', '1', output.replace(/\.mp4$/, '.png')
+    '-i', output, '-frames:v', '1', output.replace(/\.mp4$/, '.preview.png')
   ], { timeout: 30000, maxBuffer: 1024 * 1024 });
 }
