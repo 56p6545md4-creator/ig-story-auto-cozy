@@ -5,7 +5,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500&family=Noto+Sans+JP:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500&family=Noto+Sans+JP:wght@400;500&display=swap&family=Faster+One&family=Chewy"
       rel="stylesheet"
     />
     <style>
@@ -153,6 +153,18 @@
       body.is-closed .only-closed {
         display: block;
       }
+
+      /* cozy-custom-fonts:start */
+      body.is-open .status {
+        font-family: "Faster One", var(--display);
+        font-weight: 400;
+      }
+      .hours,
+      .hours-suffix {
+        font-family: "Chewy", var(--body);
+        font-weight: 400;
+      }
+      /* cozy-custom-fonts:end */
     </style>
     <!-- schedule.json の theme から色を上書き（設定が無ければ既定色のまま） -->
     <style>{{THEME}}</style>
