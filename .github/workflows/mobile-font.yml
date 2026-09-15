@@ -1,0 +1,77 @@
+name: スマホ用フォント設定
+on:
+  workflow_dispatch:
+    inputs:
+      font:
+        description: '書体を選択（保存後、次回生成から反映）'
+        type: choice
+        default: '変更しない'
+        options:
+          - '変更しない'
+          - '現在の標準（Oswald）'
+          - 'モダン（Montserrat）'
+          - 'すっきり（Noto Sans JP）'
+          - 'クラシック（Noto Serif JP）'
+permissions:
+  contents: write
+concurrency:
+  group: cozy-mobile-design-settings
+  cancel-in-progress: false
+jobs:
+  save-font:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validate and update font
+        env:
+          FONT_CHOICE: ${{ inputs.font }}
+        run: |
+          node --input-type=module <<'JS'
+          import { readFile, writeFile } from 'node:fs/promises';
+          function setFont(html, choice) {
+            const presets = {
+              '現在の標準（Oswald）': ['Oswald:wght@500&family=Noto+Sans+JP:wght@400;500', '"Oswald", "Noto Sans JP", sans-serif', '"Noto Sans JP", sans-serif'],
+              'モダン（Montserrat）': ['Montserrat:wght@400;500&family=Noto+Sans+JP:wght@400;500', '"Montserrat", "Noto Sans JP", sans-serif', '"Noto Sans JP", sans-serif'],
+              'すっきり（Noto Sans JP）': ['Noto+Sans+JP:wght@400;500', '"Noto Sans JP", sans-serif', '"Noto Sans JP", sans-serif'],
+              'クラシック（Noto Serif JP）': ['Noto+Serif+JP:wght@400;500', '"Noto Serif JP", serif', '"Noto Serif JP", serif']
+            };
+            if (choice === '変更しない') return html;
+            if (!Object.hasOwn(presets, choice)) throw new Error('フォントを選択してください');
+            const [query, display, body] = presets[choice];
+            const rules = [
+              [/href="https:\/\/fonts\.googleapis\.com\/css2\?[^"]*"/g, 'href="https://fonts.googleapis.com/css2?family=' + query + '&display=swap"'],
+              [/--display:\s*[^;]+;/g, '--display: ' + display + ';'],
+              [/--body:\s*[^;]+;/g, '--body: ' + body + ';']
+            ];
+            for (const [pattern, replacement] of rules) {
+              if ((html.match(pattern) || []).length !== 1) throw new Error('フォント設定の形式が変わっています。保存を中止しました');
+              html = html.replace(pattern, replacement);
+            }
+            return html;
+          }
+          const original = await readFile('src/template.html', 'utf8');
+          const updated = setFont(original, process.env.FONT_CHOICE);
+          if (updated !== original) await writeFile('src/template.html', updated);
+          JS
+      - name: Save font
+        run: |
+          git add -- src/template.html
+          if git diff --cached --quiet; then
+            echo '変更はありません。現在のフォントを維持しました。' >> "$GITHUB_STEP_SUMMARY"
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m "Update story font from mobile settings"
+            git push origin HEAD:main
+            echo 'フォントを保存しました。次回の画像生成から反映されます。' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo 'Instagramへの即時投稿や投稿済み画像の変更はしていません。' >> "$GITHUB_STEP_SUMMARY"
+          echo '元の書体に戻すには「現在の標準（Oswald）」を選んで実行してください。' >> "$GITHUB_STEP_SUMMARY"
+          echo '[文字の見え方をプレビューで確認する](https://github.com/56p6545md4-creator/ig-story-auto-cozy/actions/workflows/preview-story.yml)' >> "$GITHUB_STEP_SUMMARY"
