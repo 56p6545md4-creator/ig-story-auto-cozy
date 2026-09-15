@@ -45,6 +45,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Render preview only
         env:
+          ENABLE_VIDEO: '1'
           PREVIEW_DATE: ${{ inputs.date }}
         run: |
           if [ -n "$PREVIEW_DATE" ]; then
