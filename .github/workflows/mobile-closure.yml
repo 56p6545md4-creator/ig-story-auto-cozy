@@ -1,5 +1,5 @@
-name: スマホ用臨時休業設定
-run-name: 臨時休業設定：${{ inputs.date }}（${{ inputs.action }}）
+name: スマホ用臨時営業・休業設定
+run-name: 臨時営業・休業設定：${{ inputs.date }}（${{ inputs.action }}）
 on:
   workflow_dispatch:
     inputs:
@@ -10,10 +10,20 @@ on:
         options:
           - '臨時休業を登録'
           - '臨時休業を解除'
+          - '臨時営業を登録'
+          - '臨時営業を解除'
       date:
         description: '対象日（年・月・日）・日本時間。例：2026-09-24（1日ずつ設定）'
         required: true
         type: string
+      open:
+        description: '臨時営業の開始時刻（休業・解除時は使いません）'
+        type: string
+        default: '9:00'
+      close:
+        description: '臨時営業のL.O.時刻（休業・解除時は使いません）'
+        type: string
+        default: '16:00'
 permissions:
   contents: write
 concurrency:
@@ -35,23 +45,42 @@ jobs:
         env:
           CLOSURE_ACTION: ${{ inputs.action }}
           CLOSURE_DATE: ${{ inputs.date }}
+          OPEN_TIME: ${{ inputs.open }}
+          CLOSE_TIME: ${{ inputs.close }}
         run: |
           node --input-type=module <<'JS'
           import { readFile, writeFile, appendFile } from 'node:fs/promises';
-          function changeClosure(schedule, action, date) {
-            if (!['臨時休業を登録', '臨時休業を解除'].includes(action)) throw new Error('操作を選択してください');
+          function changeClosure(schedule, action, date, open, close) {
+            if (!['臨時休業を登録', '臨時休業を解除', '臨時営業を登録', '臨時営業を解除'].includes(action)) throw new Error('操作を選択してください');
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('日付は 2026-09-24 の形式で入力してください');
             const parsed = new Date(date + 'T12:00:00Z');
             if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) throw new Error('実在する日付を入力してください');
-            if (schedule.overridesSheetCsvUrl) throw new Error('スプレッドシート連携中です。臨時休業はシート側で設定してください');
+            if (schedule.overridesSheetCsvUrl) throw new Error('スプレッドシート連携中です。臨時設定はシート側で設定してください');
             const overrides = schedule.overrides || {};
             const exists = Object.hasOwn(overrides, date);
             const previous = overrides[date];
-            if (exists && previous !== null && previous?.closed !== true) throw new Error('この日には営業時間変更などの設定があります。上書きせず中止しました');
-            if (action === '臨時休業を登録') {
-              overrides[date] = { ...(previous || {}), closed: true };
-            } else {
+            const isClosed = previous === null || previous?.closed === true;
+            if (action === '臨時営業を登録') {
+              function parseTime(value) {
+                const m = String(value || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+                if (!m || +m[1] > 23 || +m[2] > 59) throw new Error('営業時間は 9:00 / 16:00 の形式で入力してください');
+                return { label: Number(m[1]) + ':' + m[2], minutes: +m[1] * 60 + +m[2] };
+              }
+              const start = parseTime(open), end = parseTime(close);
+              if (start.minutes >= end.minutes) throw new Error('終了時刻は開始時刻より後にしてください（日またぎ非対応）');
+              if (exists && isClosed) throw new Error('この日は臨時休業が登録済みです。先に臨時休業を解除してください');
+              overrides[date] = { ...(previous || {}), open: start.label, close: end.label };
+              delete overrides[date].closed;
+            } else if (action === '臨時営業を解除') {
+              if (exists && isClosed) throw new Error('この日は臨時休業です。臨時休業を解除を選んでください');
               delete overrides[date];
+            } else {
+              if (exists && !isClosed) throw new Error('この日には臨時営業・営業時間変更があります。先に臨時営業を解除してください');
+              if (action === '臨時休業を登録') {
+                overrides[date] = { ...(previous || {}), closed: true };
+                delete overrides[date].open;
+                delete overrides[date].close;
+              } else delete overrides[date];
             }
             schedule.overrides = overrides;
             return schedule;
@@ -60,9 +89,11 @@ jobs:
           const schedule = JSON.parse(original);
           const before = JSON.stringify(schedule);
           const date = process.env.CLOSURE_DATE.trim();
-          changeClosure(schedule, process.env.CLOSURE_ACTION, date);
+          changeClosure(schedule, process.env.CLOSURE_ACTION, date, process.env.OPEN_TIME, process.env.CLOSE_TIME);
           if (before !== JSON.stringify(schedule)) await writeFile('schedule.json', JSON.stringify(schedule, null, 2) + '\n');
           await appendFile(process.env.GITHUB_STEP_SUMMARY, '対象日: ' + date + '\n\n操作: ' + process.env.CLOSURE_ACTION + '\n\n');
+          const saved = schedule.overrides[date];
+          if (process.env.CLOSURE_ACTION === '臨時営業を登録') await appendFile(process.env.GITHUB_STEP_SUMMARY, '営業時間: ' + saved.open + '–' + saved.close + ' ' + (schedule.hoursSuffix || '') + '\n\n');
           JS
       - name: Save settings
         run: |
@@ -72,10 +103,10 @@ jobs:
           else
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m "Update temporary closure from mobile settings"
+            git commit -m "Update temporary opening or closure from mobile settings"
             git push origin HEAD:main
             echo '設定を保存しました。次回の画像生成から反映されます。' >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo '臨時休業の営業日は当日の自動投稿がCLOSEDになります。火曜の定休日は投稿しません。解除すると曜日ごとの通常営業に戻ります。' >> "$GITHUB_STEP_SUMMARY"
+          echo '臨時営業を登録した日は火曜日でもOPENの自動投稿対象になります。通常の火曜定休は投稿せず、普段の営業日の臨時休業はCLOSEDを投稿します。解除すると曜日ごとの通常営業に戻ります。' >> "$GITHUB_STEP_SUMMARY"
           echo 'Instagramへの即時投稿や、投稿済みストーリーの変更は行っていません。朝の投稿前までに保存してください。' >> "$GITHUB_STEP_SUMMARY"
           echo '[対象日を入力してプレビューする](https://github.com/56p6545md4-creator/ig-story-auto-cozy/actions/workflows/preview-story.yml)' >> "$GITHUB_STEP_SUMMARY"
