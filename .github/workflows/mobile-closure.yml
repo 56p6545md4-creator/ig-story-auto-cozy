@@ -1,4 +1,5 @@
 name: スマホ用臨時休業設定
+run-name: 臨時休業設定：${{ inputs.date }}（${{ inputs.action }}）
 on:
   workflow_dispatch:
     inputs:
@@ -10,7 +11,7 @@ on:
           - '臨時休業を登録'
           - '臨時休業を解除'
       date:
-        description: '対象日・日本時間（例 2026-09-24）。1日ずつ設定'
+        description: '対象日（年・月・日）・日本時間。例：2026-09-24（1日ずつ設定）'
         required: true
         type: string
 permissions:
