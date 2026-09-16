@@ -1,13 +1,12 @@
 name: daily-instagram-story
 
-# 投稿の主役は「外部cron(cron-job.org) → workflow_dispatch」で JST 9:00 ちょうどに実行。
-# 下の GitHub schedule は「万一 9:00 が失敗/未実行だった日のバックアップ」。
-# 主役(9:00)の少し後に発火させるため JST 9:10 目標（= UTC 00:10）。
-# GitHubの定時は遅れることがあるので実際はもっと後になりうるが、いずれにせよ9:00の後 → 通常は二重投稿ガードでスキップ。
+# GitHub schedule を JST 8:10 目標（= 前日 UTC 23:10）で実行。
+# GitHubの定時は遅れることがあるため、実際の投稿は8:10より後になる場合がある。
+# 外部cron(cron-job.org)の JST 9:00 実行は予備として残し、投稿済みなら二重投稿ガードでスキップ。
 # 手動実行（workflow_dispatch）でも回せる（cron-job.org もこれを叩いている）。
 on:
   schedule:
-    - cron: '10 0 * * *'
+    - cron: '10 23 * * *'
   workflow_dispatch:
 
 permissions:
