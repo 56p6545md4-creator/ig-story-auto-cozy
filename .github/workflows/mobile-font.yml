@@ -8,7 +8,14 @@ on:
         default: '変更しない'
         options:
           - '変更しない'
+          - '日替わり（7書体）'
           - 'Faster One'
+          - 'Bungee'
+          - 'Righteous'
+          - 'Shrikhand'
+          - 'Black Ops One'
+          - 'Bowlby One SC'
+          - 'Rubik Mono One'
           - 'Chewy'
           - 'Oswald'
           - 'Montserrat'
@@ -83,7 +90,13 @@ jobs:
               'Oswald': ['Oswald:wght@400;500', '"Oswald", var(--body)'],
               'Montserrat': ['Montserrat:wght@400;500', '"Montserrat", var(--body)'],
               'Noto Sans JP': ['Noto+Sans+JP:wght@400;500', '"Noto Sans JP", sans-serif'],
-              'Noto Serif JP': ['Noto+Serif+JP:wght@400;500', '"Noto Serif JP", serif']
+              'Noto Serif JP': ['Noto+Serif+JP:wght@400;500', '"Noto Serif JP", serif'],
+              'Bungee': ['Bungee', '"Bungee", var(--body)'],
+              'Righteous': ['Righteous', '"Righteous", var(--body)'],
+              'Shrikhand': ['Shrikhand', '"Shrikhand", var(--body)'],
+              'Black Ops One': ['Black+Ops+One', '"Black Ops One", var(--body)'],
+              'Bowlby One SC': ['Bowlby+One+SC', '"Bowlby One SC", var(--body)'],
+              'Rubik Mono One': ['Rubik+Mono+One', '"Rubik Mono One", var(--body)']
             };
             const added = new Map();
             for (const key of ['open', 'date', 'weekday', 'hours']) {
@@ -106,17 +119,28 @@ jobs:
             });
           }
           const original = await readFile('src/template.html', 'utf8');
+          const scheduleOriginal = await readFile('schedule.json', 'utf8');
+          const schedule = JSON.parse(scheduleOriginal);
+          const dailyFonts = ['Faster One', 'Bungee', 'Righteous', 'Shrikhand', 'Black Ops One', 'Bowlby One SC', 'Rubik Mono One'];
+          const openChoice = process.env.FONT_OPEN || '変更しない';
+          if (openChoice === '日替わり（7書体）') {
+            schedule.openFontRotation = dailyFonts;
+          } else if (openChoice !== '変更しない') {
+            schedule.openFontRotation = [openChoice];
+          }
           const updated = setFonts(original, {
-            open: process.env.FONT_OPEN,
+            open: openChoice === '日替わり（7書体）' ? '変更しない' : openChoice,
             date: process.env.FONT_DATE,
             weekday: process.env.FONT_WEEKDAY,
             hours: process.env.FONT_HOURS,
           });
           if (updated !== original) await writeFile('src/template.html', updated);
+          const scheduleUpdated = JSON.stringify(schedule, null, 2) + '\n';
+          if (scheduleUpdated !== scheduleOriginal) await writeFile('schedule.json', scheduleUpdated);
           JS
       - name: Save font
         run: |
-          git add -- src/template.html
+          git add -- src/template.html schedule.json
           if git diff --cached --quiet; then
             echo '変更はありません。現在のフォントを維持しました。' >> "$GITHUB_STEP_SUMMARY"
           else
@@ -127,5 +151,5 @@ jobs:
             echo 'フォントを保存しました。次回の画像生成から反映されます。' >> "$GITHUB_STEP_SUMMARY"
           fi
           echo 'Instagramへの即時投稿や投稿済み画像の変更はしていません。' >> "$GITHUB_STEP_SUMMARY"
-          echo 'OPEN・日付・曜日・営業時間は個別に変更できます。選択しない項目は今の書体を維持します。' >> "$GITHUB_STEP_SUMMARY"
+          echo 'OPENは日替わり7書体または固定書体を選べます。日付・曜日・営業時間も個別に変更でき、選択しない項目は今の設定を維持します。' >> "$GITHUB_STEP_SUMMARY"
           echo '[文字の見え方をプレビューで確認する](https://github.com/56p6545md4-creator/ig-story-auto-cozy/actions/workflows/preview-story.yml)' >> "$GITHUB_STEP_SUMMARY"
