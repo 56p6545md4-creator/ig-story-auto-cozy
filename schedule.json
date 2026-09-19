@@ -2,6 +2,16 @@
   "shopName": "COZY COFFEE SPOT",
   "location": "Tezukayama, Osaka",
   "hoursSuffix": "L.O.",
+  "//openFontRotation": "OPEN文字の日替わりフォント。上から順に毎日切り替わり、7日で一巡します。",
+  "openFontRotation": [
+    "Faster One",
+    "Bungee",
+    "Righteous",
+    "Shrikhand",
+    "Black Ops One",
+    "Bowlby One SC",
+    "Rubik Mono One"
+  ],
   "//sheet": "臨時休業/時間変更をスマホから足すためのGoogleスプレッドシート公開CSV URL。空なら下のoverridesだけを使う。",
   "overridesSheetCsvUrl": "",
   "//postClosedDays": "false = 定休日は投稿しない・臨時休業(シート/overrides)はCLOSEDで投稿する。true = 定休日も含め毎日投稿。",
