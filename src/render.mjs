@@ -58,6 +58,15 @@ async function prepareBackground(filePath, outDir) {
 
 function fmt(t) { return t; } // "11:00" のまま。加工したければここで。
 
+function pickDailyOpenFont(schedule, dateStr) {
+  const configured = Array.isArray(schedule.openFontRotation) ? schedule.openFontRotation : [];
+  const fonts = configured.filter((font) => typeof font === 'string' && /^[A-Za-z0-9 ]+$/.test(font.trim()));
+  if (!fonts.length) return '';
+  const dayIndex = Math.floor(Date.parse(`${dateStr}T00:00:00Z`) / 86400000);
+  return fonts[((dayIndex % fonts.length) + fonts.length) % fonts.length].trim();
+}
+
+
 function fill(tpl, map) {
   return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => (map[k] ?? ''));
 }
@@ -164,7 +173,9 @@ async function main() {
 
   // theme（色）を :root 上書きCSSにする。設定が無ければ既定色のまま。
   const t = schedule.theme || {};
-  const themeCss = `:root{${t.accent ? `--accent:${t.accent};` : ''}${t.background ? `--bg:${t.background};` : ''}}`;
+  const openFont = pickDailyOpenFont(schedule, s.date);
+  const themeCss = `:root{${t.accent ? `--accent:${t.accent};` : ''}${t.background ? `--bg:${t.background};` : ''}${openFont ? `--font-open-daily:"${openFont}";` : ''}}`;
+  if (openFont) console.log(`[font] OPEN: ${openFont}`);
 
   const map = {
     BODY_CLASS: s.isOpen ? 'is-open' : 'is-closed',
