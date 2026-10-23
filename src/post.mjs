@@ -1,11 +1,12 @@
 // Publish a rendered image or video Story. No automatic republish after an
 // ambiguous network error: creating another container could duplicate a post.
+import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 export async function postStory({
   userId, token, imageUrl, videoUrl, version = 'v25.0',
   fetchImpl = fetch, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
-  attempts = 60
+  attempts = 60, beforePublish = async () => {}
 }) {
   if (!userId || !token) throw new Error('Missing IG_USER_ID or IG_ACCESS_TOKEN');
   if ((!imageUrl && !videoUrl) || (imageUrl && videoUrl)) throw new Error('Provide exactly one IMAGE_URL or VIDEO_URL');
@@ -35,6 +36,7 @@ export async function postStory({
     if (i < attempts - 1) await sleep(5000);
   }
   if (!ready) throw new Error('Instagram processing timed out; no publish request was sent');
+  await beforePublish(container.id);
   const result = await request(userId + '/media_publish', { creation_id: container.id });
   if (!result.id) throw new Error('Instagram did not confirm publication; check Instagram before retrying');
   return result;
@@ -46,7 +48,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     token: process.env.IG_ACCESS_TOKEN,
     imageUrl: process.env.IMAGE_URL,
     videoUrl: process.env.VIDEO_URL,
-    version: process.env.IG_GRAPH_VERSION || 'v25.0'
+    version: process.env.IG_GRAPH_VERSION || 'v25.0',
+    beforePublish: async () => {
+      if (process.env.CLAIM_SCRIPT) execFileSync('bash', [process.env.CLAIM_SCRIPT], { stdio: 'inherit' });
+    }
   }).then(result => console.log('[post] published:', result.id || 'already published'))
     .catch(error => { console.error('[post]', error.message); process.exitCode = 1; });
 }

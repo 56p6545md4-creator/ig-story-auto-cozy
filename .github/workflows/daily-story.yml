@@ -1,15 +1,14 @@
 name: daily-instagram-story
 
-# GitHub schedule を JST 8:10 目標（= 前日 UTC 23:10）で実行。
-# GitHubの定時は遅れることがあるため、実際の投稿は8:10より後になる場合がある。
-# 外部cron(cron-job.org)の JST 9:00 実行は予備として残し、投稿済みなら二重投稿ガードでスキップ。
-# 手動実行（workflow_dispatch）でも回せる（cron-job.org もこれを叩いている）。
+# Primary: external workflow_dispatch at 08:10 Asia/Tokyo; see docs/scheduling.md.
+# GitHub schedule remains an independent fallback (delivery may be delayed).
 on:
   schedule:
     - cron: '10 23 * * *'
   workflow_dispatch:
 
 permissions:
+  issues: write     # failure notification
   contents: write   # レンダリング画像を published ブランチへ push するため
 
 concurrency:
@@ -18,11 +17,39 @@ concurrency:
 
 jobs:
   post-story:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check daily guard before expensive setup
+        id: guard
+        run: |
+          TODAY=$(TZ=Asia/Tokyo date +%F)
+          TIME=$(TZ=Asia/Tokyo date +%H%M)
+          echo "date=$TODAY" >> "$GITHUB_OUTPUT"
+          # Never publish before the requested morning start.
+          if (( 10#$TIME < 810 )); then
+            echo "Before 08:10 JST; no post" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=yes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch origin published
+          LAST=$(git show origin/published:last_posted.txt)
+          if [ "$LAST" = "$TODAY" ]; then
+            echo "Already posted $TODAY" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=yes" >> "$GITHUB_OUTPUT"
+          elif git cat-file -e origin/published:pending_post.txt 2>/dev/null; then
+            PENDING=$(git show origin/published:pending_post.txt)
+            if [ "$PENDING" = "$TODAY" ]; then
+              echo "Publication uncertain: inspect Instagram and pending_post.txt before retry" >&2
+              exit 1
+            fi
+          fi
+
       - name: Check required secrets before publishing
+        if: steps.guard.outputs.skip != 'yes'
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
@@ -31,18 +58,21 @@ jobs:
           test -n "$IG_ACCESS_TOKEN" || { echo "IG_ACCESS_TOKEN is missing"; exit 1; }
 
       - uses: actions/setup-node@v4
+        if: steps.guard.outputs.skip != 'yes'
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: npm
 
       - name: Install deps
+        if: steps.guard.outputs.skip != 'yes'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          command -v ffmpeg # preinstalled on ubuntu-latest; fail visibly if removed
           npm ci
           npx playwright install --with-deps chromium
 
       - name: Render today's story (photo or video)
         id: render
+        if: steps.guard.outputs.skip != 'yes'
         env:
           ENABLE_VIDEO: '1'
         run: |
@@ -59,27 +89,13 @@ jobs:
           fi
           # Preserve the current posting script before switching to published.
           cp src/post.mjs "$RUNNER_TEMP/cozy-post.mjs"
-
-      # 二重投稿ガード：published ブランチの last_posted.txt を見て、今日(JST)もう投稿済みなら以降を全部スキップ
-      - name: Skip if already posted today
-        id: dup
-        if: steps.render.outputs.post == 'yes'
-        run: |
-          git fetch origin published >/dev/null 2>&1 || true
-          LAST=$(git show origin/published:last_posted.txt 2>/dev/null || echo "")
-          TODAY=$(TZ=Asia/Tokyo date +%F)
-          if [ "$LAST" = "$TODAY" ]; then
-            echo "already=yes" >> "$GITHUB_OUTPUT"
-            echo "本日($TODAY)は投稿済み → スキップ（二重投稿防止）"
-          else
-            echo "already=no" >> "$GITHUB_OUTPUT"
-          fi
+          cp scripts/claim-post.sh "$RUNNER_TEMP/cozy-claim.sh"
 
       - name: Publish media to a public URL (immutable commit on published branch)
         id: publish
         env:
           MEDIA_EXT: ${{ steps.render.outputs.ext }}
-        if: steps.render.outputs.post == 'yes' && steps.dup.outputs.already != 'yes'
+        if: steps.render.outputs.post == 'yes'
         run: |
           OWNER_REPO="${{ github.repository }}"
           git config user.name  "story-bot"
@@ -104,22 +120,42 @@ jobs:
           fi
 
       - name: Post to Instagram Stories
-        if: steps.render.outputs.post == 'yes' && steps.dup.outputs.already != 'yes'
+        if: steps.render.outputs.post == 'yes'
         env:
+          POST_DATE: ${{ steps.guard.outputs.date }}
+          CLAIM_SCRIPT: ${{ runner.temp }}/cozy-claim.sh
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IMAGE_URL: ${{ steps.publish.outputs.image_url }}
           VIDEO_URL: ${{ steps.publish.outputs.video_url }}
         run: node "$RUNNER_TEMP/cozy-post.mjs"
 
-      # 投稿が成功したときだけ「今日投稿した」記録を残す（失敗時は記録せず、同日中の再試行を許可）
+      # 成功時に確定。publish直前のpending記録がある失敗は自動再投稿しない。
       - name: Record posted date (dup guard)
-        if: steps.render.outputs.post == 'yes' && steps.dup.outputs.already != 'yes'
+        if: steps.render.outputs.post == 'yes'
+        env:
+          POST_DATE: ${{ steps.guard.outputs.date }}
         run: |
-          TODAY=$(TZ=Asia/Tokyo date +%F)
+          TODAY="$POST_DATE"
           git config user.name  "story-bot"
           git config user.email "story-bot@users.noreply.github.com"
           echo "$TODAY" > last_posted.txt
+          rm -f pending_post.txt
+          if git ls-files --error-unmatch pending_post.txt >/dev/null 2>&1; then
+            git add -u -- pending_post.txt
+          fi
           git add -f last_posted.txt
-          git commit -m "posted $TODAY" || echo "no changes"
+          if ! git diff --cached --quiet; then git commit -m "posted $TODAY"; fi
           git push origin published
+
+      - name: Report failure in GitHub
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Instagram daily story: action required';
+            const body = `投稿処理が失敗しました。実行ログ: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\nInstagramとpublishedのpending_post.txtを確認してください。結果不明のまま記録を消して再実行しないでください。`;
+            const {data: issues} = await github.rest.issues.listForRepo({...context.repo, state: 'open', creator: 'github-actions[bot]', per_page: 100});
+            const existing = issues.find(i => i.title === title && !i.pull_request);
+            if (existing) await github.rest.issues.createComment({...context.repo, issue_number: existing.number, body});
+            else await github.rest.issues.create({...context.repo, title, body});

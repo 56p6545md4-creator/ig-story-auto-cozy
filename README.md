@@ -7,7 +7,7 @@
 - **休業日** … `CLOSED` ＋ 次の営業日と営業時間
 - 臨時休業・時間変更は **Googleスプレッドシート**に1行足すだけ（スマホから、GitHub不要）
 - 背景写真は `backgrounds/` に入れておくと日替わりで自動差し替え（HEIC可）
-- 営業日の朝、**決まった時刻**に自動投稿（cron-job.org → GitHub Actions）。トークンも毎月自動更新
+- 営業日の朝、**JST 8:10を目標**に自動投稿（cron-job.org → GitHub Actions）。トークンも毎月自動更新
 
 **はじめて導入する方へ** → まず **[導入チェックリスト.md](./導入チェックリスト.md)** を上から順に進めてください。
 日々の使い方・詳しい画面手順は **[運用ガイド.md](./運用ガイド.md)** を参照。
@@ -16,6 +16,10 @@
 > `schedule.json` と `backgrounds/` の写真だけを自分のお店用に差し替えて使います（`src/` は触りません）。
 
 ---
+
+## 朝の起動設定
+
+外部cronの08:10主系・09:00予備、必要な認証、二重投稿防止と失敗時の復旧は **[時刻設定ガイド](docs/scheduling.md)** を参照してください。正確な公開時刻は保証されません。
 
 ## 仕組み（データの流れ）
 
@@ -42,7 +46,7 @@ Instagram グラフAPI（graph.instagram.com）でストーリー投稿
 | `src/post.mjs` | Instagram へストーリー投稿（2ステップ） |
 | `src/refresh-token.mjs` | 長期トークンを延長（月次で自動実行） |
 | `backgrounds/` | 背景写真（jpg/png/webp/heic、日替わりで1枚選択） |
-| `.github/workflows/daily-story.yml` | 朝 JST 9:00 に投稿（定休日はスキップ） |
+| `.github/workflows/daily-story.yml` | 朝 JST 8:10を目標に投稿（定休日はスキップ） |
 | `.github/workflows/refresh-token.yml` | 毎月1日にトークンを自動更新 |
 
 ## ローカルで見た目を確認
