@@ -1,0 +1,45 @@
+name: Verify story rendering (no Instagram post)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/test-story-render.yml'
+      - '.github/workflows/daily-story.yml'
+      - 'src/render.mjs'
+      - 'src/video.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install video tools and browser dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          command -v ffmpeg
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Render OPEN and CLOSED previews without posting
+        env:
+          ENABLE_VIDEO: '1'
+        run: |
+          node src/render.mjs 2026-10-23
+          test -s out/story-2026-10-23.png
+          node src/render.mjs 2026-10-24
+          test -s out/story-2026-10-24.png
+          echo 'Both local previews rendered. No Instagram API called.' >> "$GITHUB_STEP_SUMMARY"
