@@ -66,7 +66,9 @@ jobs:
       - name: Install deps
         if: steps.guard.outputs.skip != 'yes'
         run: |
-          command -v ffmpeg # preinstalled on ubuntu-latest; fail visibly if removed
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          command -v ffmpeg
           npm ci
           npx playwright install --with-deps chromium
 
