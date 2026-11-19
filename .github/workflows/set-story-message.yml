@@ -1,0 +1,75 @@
+name: Set COZY Story Message
+run-name: "COZY Story Message — ${{ inputs.date }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "表示する日付（YYYY-MM-DD）"
+        required: true
+        type: string
+      message:
+        description: "ストーリー画像に重ねる一言（最大80文字。空欄で削除）"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cozy-story-message
+  cancel-in-progress: false
+
+jobs:
+  set-message:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add or remove date-specific message
+        env:
+          STORY_DATE: ${{ inputs.date }}
+          STORY_MESSAGE: ${{ inputs.message }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile, writeFile } from 'node:fs/promises';
+
+          const date = process.env.STORY_DATE ?? '';
+          const message = (process.env.STORY_MESSAGE ?? '').trim();
+          const parsed = new Date(`${date}T00:00:00Z`);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)
+              || Number.isNaN(parsed.getTime())
+              || parsed.toISOString().slice(0, 10) !== date) {
+            throw new Error('日付は実在する YYYY-MM-DD で入力してください。');
+          }
+          if (Array.from(message).length > 80) {
+            throw new Error('メッセージは80文字以内で入力してください。');
+          }
+
+          const path = 'schedule.json';
+          const schedule = JSON.parse(await readFile(path, 'utf8'));
+          if (schedule.messages === undefined) schedule.messages = {};
+          if (!schedule.messages || typeof schedule.messages !== 'object' || Array.isArray(schedule.messages)) {
+            throw new Error('schedule.json の messages は日付キーのオブジェクトにしてください。');
+          }
+
+          if (message) schedule.messages[date] = message;
+          else delete schedule.messages[date];
+
+          await writeFile(path, `${JSON.stringify(schedule, null, 2)}\\n`, 'utf8');
+          console.log(message ? `更新: ${date}` : `削除: ${date}`);
+          NODE
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add schedule.json
+          if git diff --cached --quiet; then
+            echo "変更はありません。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git commit -m "Update story message for $STORY_DATE"
+          git push origin HEAD:main
+          echo "設定を保存しました。投稿は指定日の通常スケジュールで行われます。" >> "$GITHUB_STEP_SUMMARY"
