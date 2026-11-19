@@ -58,7 +58,7 @@ jobs:
           if (message) schedule.messages[date] = message;
           else delete schedule.messages[date];
 
-          await writeFile(path, `${JSON.stringify(schedule, null, 2)}\\n`, 'utf8');
+          await writeFile(path, `${JSON.stringify(schedule, null, 2)}\n`, 'utf8');
           console.log(message ? `更新: ${date}` : `削除: ${date}`);
           NODE
 
