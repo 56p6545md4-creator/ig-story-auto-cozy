@@ -131,6 +131,17 @@
         color: var(--ink);
       }
 
+      .message {
+        max-width: 86%;
+        margin-top: 30px;
+        color: var(--ink);
+        font-size: 42px;
+        font-weight: 500;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
       /* 次の営業日：日付＋時間を1行、Next Openラベルと同サイズ */
       .next-info {
         margin-top: 14px;
@@ -194,6 +205,7 @@
         <div class="status">OPEN</div>
         <div class="hours" style="margin-top: 72px;">{{OPEN}}<span class="sep">–</span>{{CLOSE}}<span class="hours-suffix">{{HOURS_SUFFIX}}</span></div>
         <div class="note only-note">{{NOTE}}</div>
+        <div class="message">{{MESSAGE}}</div>
       </div>
 
       <div class="only-closed">
@@ -203,6 +215,7 @@
           {{NEXT_DATE}} {{NEXT_WEEKDAY}} {{NEXT_OPEN}}<span class="sep">–</span>{{NEXT_CLOSE}}
         </div>
         <div class="note note-closed">{{NOTE}}</div>
+        <div class="message">{{MESSAGE}}</div>
       </div>
     </div>
   </body>
