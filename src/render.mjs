@@ -67,6 +67,10 @@ function pickDailyOpenFont(schedule, dateStr) {
 }
 
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+}
+
 function fill(tpl, map) {
   return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => (map[k] ?? ''));
 }
@@ -141,6 +145,8 @@ async function main() {
   }
 
   const s = getStatus(schedule, baseDate);
+  const rawMessage = schedule.messages?.[s.date];
+  const message = typeof rawMessage === 'string' ? rawMessage.trim() : '';
 
   const outDir = path.join(ROOT, 'out');
   await mkdir(outDir, { recursive: true });
@@ -190,6 +196,7 @@ async function main() {
     CLOSE: s.hours ? fmt(s.hours.close) : '',
     HOURS_SUFFIX: schedule.hoursSuffix || '',
     NOTE: s.note || '',
+    MESSAGE: escapeHtml(message),
     // closed
     NEXT_DATE: s.nextOpen ? s.nextOpen.dateLabel : '',
     NEXT_WEEKDAY: s.nextOpen ? s.nextOpen.weekdayJa : '',
@@ -201,6 +208,7 @@ async function main() {
   html = fill(html, map);
   // 備考が無い日は空のnote要素を消す（余白が出ないように）
   if (!s.note) html = html.replace(/<div class="note[^"]*">\s*<\/div>/g, '');
+  if (!message) html = html.replace(/<div class="message">\s*<\/div>/g, '');
 
   const outName = `${outputBase}.${isVideo ? 'mp4' : 'png'}`;
   const outPath = path.join(outDir, outName);
