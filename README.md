@@ -47,6 +47,7 @@ Instagram グラフAPI（graph.instagram.com）でストーリー投稿
 | `src/refresh-token.mjs` | 長期トークンを延長（月次で自動実行） |
 | `backgrounds/` | 背景写真（jpg/png/webp/heic、日替わりで1枚選択） |
 | `.github/workflows/daily-story.yml` | 朝 JST 8:10を目標に投稿（定休日はスキップ） |
+| `.github/workflows/set-story-message.yml` | Actionsから日付別のメッセージを追加・削除 |
 | `.github/workflows/refresh-token.yml` | 毎月1日にトークンを自動更新 |
 
 ## ローカルで見た目を確認
